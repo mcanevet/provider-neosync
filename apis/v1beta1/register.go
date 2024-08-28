@@ -13,7 +13,7 @@ import (
 
 // Package type metadata.
 const (
-	Group   = "template.upbound.io"
+	Group   = "neosync.mcanevet.io"
 	Version = "v1beta1"
 )
 

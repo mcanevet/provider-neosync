@@ -1,40 +1,340 @@
-name: hashicorp/null
+name: nucleuscloud/neosync
 resources:
-    null_resource:
+    neosync_connection:
         subCategory: ""
-        description: The null_resource resource implements the standard resource lifecycle but takes no further action. On Terraform 1.4 and later, use the terraform_data resource type https://developer.hashicorp.com/terraform/language/resources/terraform-data instead. The triggers argument allows specifying an arbitrary set of values that, when changed, will cause the resource to be replaced.
-        name: null_resource
-        title: null_resource Resource - terraform-provider-null
+        description: Neosync Connection resource
+        name: neosync_connection
+        title: neosync_connection Resource - terraform-provider-neosync
         examples:
-            - name: cluster
+            - name: local_pg
               manifest: |-
                 {
-                  "connection": [
-                    {
-                      "host": "${element(aws_instance.cluster[*].public_ip, 0)}"
-                    }
-                  ],
-                  "provisioner": {
-                    "remote-exec": [
-                      {
-                        "inline": [
-                          "bootstrap-cluster.sh ${join(\" \",\n      aws_instance.cluster[*].private_ip)}"
-                        ]
-                      }
-                    ]
-                  },
-                  "triggers": {
-                    "cluster_instance_ids": "${join(\",\", aws_instance.cluster[*].id)}"
+                  "name": "local-pg",
+                  "postgres": {
+                    "host": "localhost",
+                    "name": "postgres",
+                    "pass": "postgres",
+                    "port": 5432,
+                    "ssl_mode": "disable",
+                    "tunnel": {
+                      "host": "localhost",
+                      "known_host_public_key": "123",
+                      "passphrase": "test",
+                      "port": 22,
+                      "private_key": "my-private-key",
+                      "user": "test"
+                    },
+                    "user": "postgres"
                   }
                 }
-              dependencies:
-                aws_instance.cluster: |-
-                    {
-                      "ami": "ami-0dcc1e21636832c5d",
-                      "count": 3,
-                      "instance_type": "m5.large"
-                    }
+            - name: private_db
+              manifest: |-
+                {
+                  "name": "private-pg",
+                  "postgres": {
+                    "host": "my-private-db.example.com",
+                    "name": "postgres",
+                    "pass": "postgres",
+                    "port": 5432,
+                    "ssl_mode": "disable",
+                    "tunnel": {
+                      "host": "bastion.example.com",
+                      "known_host_public_key": "123",
+                      "passphrase": "test",
+                      "port": 22,
+                      "private_key": "my-private-key",
+                      "user": "test"
+                    },
+                    "user": "postgres"
+                  }
+                }
+            - name: private_mysql_db
+              manifest: |-
+                {
+                  "mysql": {
+                    "host": "my-private-db.example.com",
+                    "name": "mysql",
+                    "pass": "mysql",
+                    "port": 3306,
+                    "protocol": "tcp",
+                    "tunnel": {
+                      "host": "bastion.example.com",
+                      "known_host_public_key": "123",
+                      "passphrase": "test",
+                      "port": 22,
+                      "private_key": "my-private-key",
+                      "user": "test"
+                    },
+                    "user": "mysql"
+                  },
+                  "name": "private-mysql"
+                }
+            - name: job_bucket
+              manifest: |-
+                {
+                  "aws_s3": {
+                    "bucket": "my-company-bucket",
+                    "path_prefix": "/neosync"
+                  },
+                  "name": "stage-backups"
+                }
         argumentDocs:
-            id: (String) This is set to a random value at create time.
-            triggers: (Map of String) A map of arbitrary strings that, when changed, will force the null resource to be replaced, re-running any associated provisioners.
+            access_key_id: (String) The AWS access key id
+            account_id: (String) The unique identifier of the account. Can be pulled from the API Key if present, or must be specified if using a user access token
+            aws_s3: (Attributes) The aws s3 bucket that will be associated with this connection (see below for nested schema)
+            bucket: (String) The name of the S3 bucket
+            credentials: (Attributes) Credentials that may be necessary to access the S3 bucket in a R/W fashion (see below for nested schema)
+            endpoint: (String) The endpoint that will be used by the SDK to access the bucket
+            from_ec2_role: (Boolean) Will result in the sync operations pulling from the EC2 role
+            host: (String) The host name of the mysql server
+            id: (String) The unique identifier of the connection
+            known_host_public_key: (String) The known SSH public key of the tunnel server.
+            mysql: (Attributes) The mysql database that will be associated with this connection (see below for nested schema)
+            name: (String) The unique friendly name of the connection
+            pass: (String, Sensitive) The password that will be authenticated with
+            passphrase: (String, Sensitive) If not using key authentication, a password must be provided. If a private key is provided, but encrypted, provide the passphrase here as it will be used to decrypt the private key
+            path_prefix: (String) The folder within the bucket that the connection will be scoped to
+            port: (Number) The port of the mysql server
+            postgres: (Attributes) The postgres database that will be associated with this connection (see below for nested schema)
+            private_key: (String, Sensitive) If using key authentication, this must be a pem encoded private key
+            profile: (String) The profile found in the ~/.aws/config that can be used to access credentials
+            protocol: (String) The protocol of the mysql server
+            region: (String) The region that will be used by the SDK to access the bucket
+            role_arn: (String) The role arn that can be assumed
+            role_external_id: (String) The external id that will be provided when the role arn is assumed
+            secret_access_key: (String, Sensitive) The AWS secret access key
+            session_token: (String) The AWS session token
+            ssl_mode: (String) The SSL mode for the postgres server
+            tunnel: (Attributes) SSH tunnel that is used to access databases that are not publicly accessible to the internet (see below for nested schema)
+            url: (String) Standard mysql url connection string.
+            user: (String) The name of the user that will be authenticated with
+        importStatements: []
+    neosync_job:
+        subCategory: ""
+        description: Job resource
+        name: neosync_job
+        title: neosync_job Resource - terraform-provider-neosync
+        examples:
+            - name: prod_to_stage
+              manifest: |-
+                {
+                  "destinations": [
+                    {
+                      "connection_id": "${var.stage_connection_id}",
+                      "postgres": {
+                        "init_table_schema": false,
+                        "truncate_table": {
+                          "cascade": true,
+                          "truncate_before_insert": true
+                        }
+                      }
+                    }
+                  ],
+                  "mappings": [
+                    {
+                      "column": "id",
+                      "schema": "public",
+                      "table": "users",
+                      "transformer": {
+                        "config": {
+                          "passthrough": {}
+                        },
+                        "source": "passthrough"
+                      }
+                    }
+                  ],
+                  "name": "prod-to-stage",
+                  "source": {
+                    "postgres": {
+                      "connection_id": "${var.prod_connection_id}",
+                      "halt_on_new_column_additon": false
+                    }
+                  }
+                }
+        argumentDocs:
+            abbreviate: (Boolean)
+            account_id: (String) The unique identifier of the account. Can be pulled from the API Key if present, or must be specified if using a user access token
+            aws_s3: (Attributes) AWS S3 connection specific options (see below for nested schema)
+            cascade: (Boolean) Will truncate cascade. This is required if the table holds any foreign key constraints. If this is true, truncate_before_insert must also be true
+            categories: (String)
+            code: (String)
+            column: (String) The column in the specified table
+            config: (Attributes) This config object consists of the matching configuration defined with the source specified. (see below for nested schema)
+            connection_id: (String) The unique identifier of the connection that will be used during the synchronization process
+            cron_schedule: (String) A cron string for how often it's desired to schedule the job to run
+            destinations: (Attributes List) A list of destination connections and any relevant configurations that are available to them dependent on type (see below for nested schema)
+            fk_source_connection_id: (String) The unique connection identifier that is used to generate schema specific details. This is usually set to the destination connectio id if it has been upserted with the schema already
+            generate: (Attributes) Generate specific connection configurations. Currently only supports single table generation (see below for nested schema)
+            generate_bool: (Attributes) (see below for nested schema)
+            generate_card_number: (Attributes) (see below for nested schema)
+            generate_categorical: (Attributes) (see below for nested schema)
+            generate_city: (Attributes) (see below for nested schema)
+            generate_default: (Attributes) (see below for nested schema)
+            generate_e164_phone_number: (Attributes) (see below for nested schema)
+            generate_email: (Attributes) (see below for nested schema)
+            generate_firstname: (Attributes) (see below for nested schema)
+            generate_float64: (Attributes) (see below for nested schema)
+            generate_full_address: (Attributes) (see below for nested schema)
+            generate_fullname: (Attributes) (see below for nested schema)
+            generate_gender: (Attributes) (see below for nested schema)
+            generate_int64: (Attributes) (see below for nested schema)
+            generate_int64_phone_number: (Attributes) (see below for nested schema)
+            generate_lastname: (Attributes) (see below for nested schema)
+            generate_sha256: (Attributes) (see below for nested schema)
+            generate_ssn: (Attributes) (see below for nested schema)
+            generate_state: (Attributes) (see below for nested schema)
+            generate_street_address: (Attributes) (see below for nested schema)
+            generate_string: (Attributes) (see below for nested schema)
+            generate_string_phone_number: (Attributes) (see below for nested schema)
+            generate_unix_timestamp: (Attributes) (see below for nested schema)
+            generate_username: (Attributes) (see below for nested schema)
+            generate_utc_timestamp: (Attributes) (see below for nested schema)
+            generate_uuid: (Attributes) (see below for nested schema)
+            generate_zipcode: (Attributes) (see below for nested schema)
+            halt_on_new_column_addition: (Boolean) Whether or not to halt the job if it detects a new column that has been added in the source that has not been defined in the mappings schema
+            id: (String) The unique identifier of the connection
+            include_hyphens: (Boolean)
+            init_table_schema: (Boolean) Whether or not to have neosync init the table schema and constraints it pulled from the source connection
+            mappings: (Attributes List) Details each schema,table,column along with the transformation that will be executed (see below for nested schema)
+            max: (Number)
+            maximum_attempts: (Number) The maximum number of times to retry if there is a failure or timeout
+            min: (Number)
+            mysql: (Attributes) Mysql connection specific options (see below for nested schema)
+            name: (String) The unique friendly name of the job
+            "null": (Attributes) (see below for nested schema)
+            passthrough: (Attributes) (see below for nested schema)
+            postgres: (Attributes) Postgres connection specific options (see below for nested schema)
+            precision: (Number)
+            preserve_domain: (Boolean)
+            preserve_length: (Boolean)
+            randomization_range_max: (Number)
+            randomization_range_min: (Number)
+            randomize_sign: (Boolean)
+            retry_policy: (Attributes) The table sync retry policy (see below for nested schema)
+            row_count: (Number) The number of rows to generate into the table
+            run_timeout: (Number) The max amount of time a job run is allotted
+            schedule_to_close_timeout: (Number) The maximum amount of time allotted for a table sync with retries
+            schema: (String) The name of the schema
+            schemas: (Attributes List) A list of schemas and table specific options (see below for nested schema)
+            source: (Attributes) Configuration details about the source data connection (see below for nested schema)
+            start_to_close_timeout: (Number) The amount of time allotted for a table sync
+            sync_options: (Attributes) Advanced settings and other options specific to a table sync (see below for nested schema)
+            table: (String) The name of the table
+            tables: (Attributes List) A list of tables and their specific options within the defined schema (see below for nested schema)
+            transform_character_scramble: (Attributes) (see below for nested schema)
+            transform_e164_phone_number: (Attributes) (see below for nested schema)
+            transform_email: (Attributes) (see below for nested schema)
+            transform_firstname: (Attributes) (see below for nested schema)
+            transform_float64: (Attributes) (see below for nested schema)
+            transform_fullname: (Attributes) (see below for nested schema)
+            transform_int64: (Attributes) (see below for nested schema)
+            transform_int64_phone_number: (Attributes) (see below for nested schema)
+            transform_javascript: (Attributes) (see below for nested schema)
+            transform_lastname: (Attributes) (see below for nested schema)
+            transform_phone_number: (Attributes) (see below for nested schema)
+            transform_string: (Attributes) (see below for nested schema)
+            transformer: (Attributes) The transformer that will be performed on the column (see below for nested schema)
+            truncate_before_insert: (Boolean) Will truncate the table prior to insertion of any records
+            truncate_table: (Attributes) Details about what truncation should occur (see below for nested schema)
+            user_defined_transformer: (Attributes) (see below for nested schema)
+            valid_luhn: (Boolean)
+            where_clause: (String) A where clause that will be used to subset the table during sync
+            workflow_options: (Attributes) Advanced settings and other options specific to a job run (see below for nested schema)
+        importStatements: []
+    neosync_user_defined_transformer:
+        subCategory: ""
+        description: Neosync User Defined Transformer resource
+        name: neosync_user_defined_transformer
+        title: neosync_user_defined_transformer Resource - terraform-provider-neosync
+        examples:
+            - name: my_transformer
+              manifest: |-
+                {
+                  "config": {
+                    "generate_card_number": {
+                      "valid_luhn": false
+                    }
+                  },
+                  "datatype": "int64",
+                  "description": "Generate CC with valid luhn turned off",
+                  "name": "custom-gen-cc",
+                  "source": "generate_card_number"
+                }
+            - name: my_transformer
+              manifest: |-
+                {
+                  "config": {
+                    "${[data.neosync_system_transformer.generate_cc.source]}": {
+                      "valid_luhn": false
+                    }
+                  },
+                  "datatype": "${data.neosync_system_transformer.generate_cc.datatype}",
+                  "description": "Generate CC with valid luhn turned off",
+                  "name": "custom-gen-cc",
+                  "source": "${data.neosync_system_transformer.generate_cc.source}"
+                }
+              references:
+                datatype: data.neosync_system_transformer.generate_cc.datatype
+                source: data.neosync_system_transformer.generate_cc.source
+        argumentDocs:
+            abbreviate: (Boolean)
+            account_id: (String) The unique identifier of the account. Can be pulled from the API Key if present, or must be specified if using a user access token
+            categories: (String)
+            code: (String)
+            config: (Attributes) This config object consists of the matching configuration defined with the source specified. (see below for nested schema)
+            description: (String) The description of the transformer
+            generate_bool: (Attributes) (see below for nested schema)
+            generate_card_number: (Attributes) (see below for nested schema)
+            generate_categorical: (Attributes) (see below for nested schema)
+            generate_city: (Attributes) (see below for nested schema)
+            generate_default: (Attributes) (see below for nested schema)
+            generate_e164_phone_number: (Attributes) (see below for nested schema)
+            generate_email: (Attributes) (see below for nested schema)
+            generate_firstname: (Attributes) (see below for nested schema)
+            generate_float64: (Attributes) (see below for nested schema)
+            generate_full_address: (Attributes) (see below for nested schema)
+            generate_fullname: (Attributes) (see below for nested schema)
+            generate_gender: (Attributes) (see below for nested schema)
+            generate_int64: (Attributes) (see below for nested schema)
+            generate_int64_phone_number: (Attributes) (see below for nested schema)
+            generate_lastname: (Attributes) (see below for nested schema)
+            generate_sha256: (Attributes) (see below for nested schema)
+            generate_ssn: (Attributes) (see below for nested schema)
+            generate_state: (Attributes) (see below for nested schema)
+            generate_street_address: (Attributes) (see below for nested schema)
+            generate_string: (Attributes) (see below for nested schema)
+            generate_string_phone_number: (Attributes) (see below for nested schema)
+            generate_unix_timestamp: (Attributes) (see below for nested schema)
+            generate_username: (Attributes) (see below for nested schema)
+            generate_utc_timestamp: (Attributes) (see below for nested schema)
+            generate_uuid: (Attributes) (see below for nested schema)
+            generate_zipcode: (Attributes) (see below for nested schema)
+            id: (String) The unique identifier of the transformer
+            include_hyphens: (Boolean)
+            max: (Number)
+            min: (Number)
+            name: (String) The unique friendly name of the transformer
+            "null": (Attributes) (see below for nested schema)
+            passthrough: (Attributes) (see below for nested schema)
+            precision: (Number)
+            preserve_domain: (Boolean)
+            preserve_length: (Boolean)
+            randomization_range_max: (Number)
+            randomization_range_min: (Number)
+            randomize_sign: (Boolean)
+            source: (String) The system transformer that this user defined transformer is based off of. This is the same value that is specified as the key in the config
+            transform_character_scramble: (Attributes) (see below for nested schema)
+            transform_e164_phone_number: (Attributes) (see below for nested schema)
+            transform_email: (Attributes) (see below for nested schema)
+            transform_firstname: (Attributes) (see below for nested schema)
+            transform_float64: (Attributes) (see below for nested schema)
+            transform_fullname: (Attributes) (see below for nested schema)
+            transform_int64: (Attributes) (see below for nested schema)
+            transform_int64_phone_number: (Attributes) (see below for nested schema)
+            transform_javascript: (Attributes) (see below for nested schema)
+            transform_lastname: (Attributes) (see below for nested schema)
+            transform_phone_number: (Attributes) (see below for nested schema)
+            transform_string: (Attributes) (see below for nested schema)
+            user_defined_transformer: (Attributes) (see below for nested schema)
+            valid_luhn: (Boolean)
         importStatements: []
